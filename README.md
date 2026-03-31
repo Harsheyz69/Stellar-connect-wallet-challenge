@@ -60,24 +60,24 @@ The application will launch and be accessible at `http://localhost:3000`.
 
 ### Wallet Connection and Balance
 Displays the user's public address and active XLM balance fetched from the network.
-![Wallet Connected](./screenshots/wallet-connected.png)
-*(Includes the balance state view: [Balance Displayed](./screenshots/balance-displayed.png))*
+![Wallet Connected](./screenshots/wallet-connected-and-balance-displayed.png)
+*(Includes the balance state view: [Balance Displayed](./screenshots/wallet-connected-and-balance-displayed.png))*
 
 ### Transaction Processing
 Shows the Native Payment operation pending user signature via Freighter.
-![Successful Transaction](./screenshots/transaction-success.png)
+![Successful Transaction](./screenshots/test-net-transaction-display.png)
 
 ### Transaction Result
 The final state confirming successful submission to the Stellar Testnet.
-![Transaction Result](./screenshots/transaction-result.png)
+![Transaction Result](./screenshots/testnet-transaction-result-display.png)
 
 ---
 
 ## Transaction Proof
 
 ```
-Transaction Id : c6f735a3a9b8363079ef4198363efa598cae242f7ac0a9b27bfeb3f685a99c30
-Processed      : 2026-03-31 15:29:57 UTC
+Transaction Id : ba51bbdb7c7bcd27a94657cbc8c90e1db4c62041f1dcec15184bc550ecb03ff2
+Processed      : 2026-03-31 15:00:50 UTC
 ```
 
 ---
