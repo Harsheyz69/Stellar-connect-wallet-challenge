@@ -162,19 +162,23 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-lg bg-slate-800 rounded-3xl shadow-2xl overflow-hidden border border-slate-700">
+    <div className="relative min-h-screen bg-[#050505] text-gray-100 flex items-center justify-center p-4 overflow-hidden font-sans">
+      {/* Background Animated Blobs for Glassmorphism */}
+      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-orange-600/20 rounded-full mix-blend-screen filter blur-[100px] animate-pulse"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-amber-600/10 rounded-full mix-blend-screen filter blur-[100px] animate-pulse" style={{ animationDelay: '2s' }}></div>
+
+      <div className="relative z-10 w-full max-w-lg bg-white/[0.02] backdrop-blur-2xl rounded-3xl shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] overflow-hidden border border-white/[0.05]">
         {/* Header */}
-        <div className="p-8 border-b border-slate-700 bg-slate-800/50">
+        <div className="p-8 border-b border-white/[0.05] bg-black/20">
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">
+            <h1 className="text-2xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-orange-400 to-amber-200">
               Stellar dApp
             </h1>
             {!publicKey ? (
               <button
                 onClick={handleConnect}
                 disabled={loading}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 transition-colors rounded-xl font-medium text-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-tr from-orange-600 to-orange-500 hover:from-orange-500 hover:to-orange-400 shadow-lg shadow-orange-500/20 transition-all rounded-xl font-medium text-sm text-white border border-orange-400/20"
               >
                 <Wallet size={16} />
                 {loading ? "Connecting..." : "Connect"}
@@ -182,7 +186,7 @@ function App() {
             ) : (
               <button
                 onClick={handleDisconnect}
-                className="flex items-center gap-2 px-4 py-2 border border-slate-600 hover:bg-slate-700 transition-colors rounded-xl font-medium text-sm text-slate-300"
+                className="flex items-center gap-2 px-4 py-2 border border-white/10 hover:bg-white/5 transition-all rounded-xl font-medium text-sm text-gray-300 hover:text-white backdrop-blur-md"
               >
                 <LogOut size={16} />
                 Disconnect
@@ -192,27 +196,31 @@ function App() {
 
           {/* Balance Area */}
           {publicKey ? (
-            <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-700/50 backdrop-blur-sm">
-              <p className="text-xs text-slate-400 font-medium tracking-wide uppercase mb-1">
-                Connected Wallet
-              </p>
-              <p className="text-sm text-slate-300 font-mono mb-4 break-all opacity-80">
-                {publicKey}
-              </p>
-              <div className="flex items-end gap-2 text-emerald-400 mb-4">
-                <span className="text-4xl font-bold tracking-tight">
-                  {balance !== null ? balance : "..."}
-                </span>
-                <span className="text-lg font-medium mb-1">XLM</span>
+            <div className="bg-black/30 p-6 rounded-2xl border border-white/10 backdrop-blur-md relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full blur-3xl -mr-10 -mt-10 transition-transform group-hover:scale-150 duration-700"></div>
+              
+              <div className="relative z-10">
+                <p className="text-xs text-orange-200/50 font-medium tracking-widest uppercase mb-1">
+                  Connected Wallet
+                </p>
+                <p className="text-sm text-gray-300 font-mono mb-4 break-all opacity-90">
+                  {publicKey}
+                </p>
+                <div className="flex items-end gap-2 text-orange-400 mb-4 drop-shadow-md">
+                  <span className="text-4xl font-bold tracking-tight">
+                    {balance !== null ? balance : "..."}
+                  </span>
+                  <span className="text-lg font-medium mb-1 text-orange-300">XLM</span>
+                </div>
+                <p className="text-xs text-gray-500 italic">
+                  Switch your active wallet in the Freighter extension to automatically update.
+                </p>
               </div>
-              <p className="text-xs text-slate-500 italic">
-                Looking for your other account? Open the Freighter browser extension and switch your active wallet. The app will update automatically!
-              </p>
             </div>
           ) : (
             <div className="text-center py-8 opacity-70">
-              <p className="text-slate-400 mb-2">Welcome to Level 1 - White Belt</p>
-              <p className="text-sm text-slate-500">Connect your Freighter testnet wallet to begin.</p>
+              <p className="text-gray-400 mb-2 font-medium">Welcome to Level 1 - White Belt</p>
+              <p className="text-sm text-gray-500">Connect your Freighter testnet wallet to begin.</p>
             </div>
           )}
         </div>
@@ -220,10 +228,13 @@ function App() {
         {/* Transaction Form */}
         {publicKey && (
           <div className="p-8">
-            <h2 className="text-lg font-semibold mb-6">Send XLM</h2>
+            <h2 className="text-lg font-semibold mb-6 flex items-center gap-2 text-gray-100">
+              <Send size={18} className="text-orange-400" />
+              Send XLM
+            </h2>
             <form onSubmit={handleSendTransaction} className="space-y-5">
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-2">
+                <label className="block text-sm font-medium text-gray-400 mb-2">
                   Destination Address
                 </label>
                 <input
@@ -231,13 +242,13 @@ function App() {
                   required
                   value={targetAddress}
                   onChange={(e) => setTargetAddress(e.target.value)}
-                  className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 font-mono text-sm placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-gray-200 font-mono text-sm placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 backdrop-blur-md transition-all shadow-inner"
                   placeholder="G..."
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-2">
+                <label className="block text-sm font-medium text-gray-400 mb-2">
                   Amount (XLM)
                 </label>
                 <input
@@ -247,7 +258,7 @@ function App() {
                   min="0.0000001"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 font-medium placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-gray-200 font-medium placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 backdrop-blur-md transition-all shadow-inner"
                   placeholder="0.0"
                 />
               </div>
@@ -255,7 +266,7 @@ function App() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3.5 px-4 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white rounded-xl font-medium transition-all shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-4 px-4 bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500 hover:from-orange-500 hover:via-amber-500 hover:to-orange-400 text-white rounded-xl font-medium transition-all duration-300 shadow-[0_0_20px_rgba(249,115,22,0.3)] hover:shadow-[0_0_25px_rgba(249,115,22,0.5)] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed border border-orange-400/30"
               >
                 {loading ? <Clock size={20} className="animate-spin" /> : <Send size={20} />}
                 {loading ? "Processing..." : "Submit Transaction"}
@@ -264,27 +275,27 @@ function App() {
 
             {/* Status Messages */}
             {txStatus.status === "error" && (
-              <div className="mt-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3 text-red-400">
+              <div className="mt-6 p-4 bg-red-950/40 border border-red-500/30 rounded-xl flex items-start gap-3 text-red-400 backdrop-blur-md shadow-[0_0_15px_rgba(239,68,68,0.1)]">
                 <AlertCircle size={20} className="shrink-0 mt-0.5" />
-                <p className="text-sm font-medium break-words leading-relaxed">
+                <p className="text-sm font-medium break-words leading-relaxed text-red-300">
                   {txStatus.error}
                 </p>
               </div>
             )}
 
             {txStatus.status === "success" && (
-              <div className="mt-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-start gap-3 text-emerald-400">
+              <div className="mt-6 p-4 bg-emerald-950/40 border border-emerald-500/30 rounded-xl flex items-start gap-3 text-emerald-400 backdrop-blur-md shadow-[0_0_15px_rgba(16,185,129,0.1)]">
                 <CheckCircle2 size={20} className="shrink-0 mt-0.5" />
                 <div className="text-sm font-medium overflow-hidden">
-                  <p className="mb-1 text-emerald-300">Transaction Successful!</p>
+                  <p className="mb-1 text-emerald-300 font-semibold tracking-wide">Transaction Successful!</p>
                   <a
                     href={`https://stellar.expert/explorer/testnet/tx/${txStatus.hash}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="truncate block hover:underline text-emerald-500 opacity-80"
+                    className="truncate block hover:underline text-emerald-500/90 hover:text-emerald-400 transition-colors"
                     title="View on Stellar Expert"
                   >
-                    Hash: {txStatus.hash}
+                    Hash: <span className="font-mono text-xs opacity-80">{txStatus.hash}</span>
                   </a>
                 </div>
               </div>
