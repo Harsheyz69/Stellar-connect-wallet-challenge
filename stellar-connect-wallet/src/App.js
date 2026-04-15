@@ -1,310 +1,837 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
-  isConnected,
-  isAllowed,
-  requestAccess,
-  getAddress,
-  signTransaction,
-  WatchWalletChanges,
-} from "@stellar/freighter-api";
-import { Horizon, TransactionBuilder, Networks, Asset, Operation } from "@stellar/stellar-sdk";
-import { Wallet, LogOut, Send, AlertCircle, CheckCircle2, Clock } from "lucide-react";
+  Wallet,
+  LogOut,
+  Send,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Plus,
+  Trash2,
+  FileText,
+  Activity,
+  RefreshCw,
+  ExternalLink,
+  ShieldCheck,
+  Zap,
+  XCircle,
+  ChevronDown,
+  Loader2,
+  Sun,
+  Moon,
+} from "lucide-react";
 
-const SERVER = new Horizon.Server("https://horizon-testnet.stellar.org");
+import {
+  detectWallets,
+  connectWallet,
+  disconnectWallet as walletDisconnect,
+  tryAutoConnect,
+  getActiveWallet,
+} from "./walletKit";
+
+import {
+  fetchBalance,
+  sendPayment,
+  recordPaymentOnContract,
+  isValidStellarAddress,
+  getPayments,
+  getTransactionHistory,
+} from "./contractClient";
+
+import {
+  WALLET_TYPES,
+  ERROR_TYPES,
+  ERROR_MESSAGES,
+  TX_STATUS,
+  CONTRACT_ID,
+} from "./constants";
+
+import "./App.css";
+
+// ─── Main App ───────────────────────────────────────────────────────────────
 
 function App() {
+  // Theme state
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem("stellarpay-theme") || "light";
+  });
+
+  // Wallet state
   const [publicKey, setPublicKey] = useState("");
+  const [walletType, setWalletType] = useState(null);
   const [balance, setBalance] = useState(null);
-  const [targetAddress, setTargetAddress] = useState(
-    "GA3YXZ5O5DNGZONZY5YGBR3PIG3O4T7YVGB2M62VUT4Q3H2D4Z4SOWS4" // Fallback target
-  );
-  const [amount, setAmount] = useState("1");
-  const [txStatus, setTxStatus] = useState({ status: "idle", hash: "", error: "" });
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const [availableWallets, setAvailableWallets] = useState([]);
+
+  // Payment form state
+  const [recipients, setRecipients] = useState([
+    { address: "", amount: "1", memo: "" },
+  ]);
+  const [recordOnContract, setRecordOnContract] = useState(true);
+
+  // Transaction state
+  const [txStatus, setTxStatus] = useState(TX_STATUS.IDLE);
+  const [txHash, setTxHash] = useState("");
+  const [txError, setTxError] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    checkWalletConnection();
-    
-    // Automatically detect when user switches accounts inside the Freighter extension
-    const watcher = new WatchWalletChanges();
-    watcher.watch(async ({ address, error }) => {
-      if (!error && address) {
-        setPublicKey(address);
-        await fetchBalance(address);
-      }
-    });
+  // Data state
+  const [contractPayments, setContractPayments] = useState([]);
+  const [txHistory, setTxHistory] = useState([]);
+  const [activeTab, setActiveTab] = useState("payments"); // 'payments' | 'history'
 
-    return () => {
-      watcher.stop();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Polling ref
+  const pollRef = useRef(null);
+
+  // ── Theme Persistance ─────────────────────────────────────────────────────
+
+  useEffect(() => {
+    localStorage.setItem("stellarpay-theme", theme);
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+
+  // ── Auto-Connect on mount ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    (async () => {
+      const result = await tryAutoConnect();
+      if (result) {
+        setPublicKey(result.address);
+        setWalletType(result.walletType);
+        const bal = await fetchBalance(result.address);
+        setBalance(bal);
+      }
+    })();
   }, []);
 
-  const checkWalletConnection = async () => {
-    try {
-      const conn = await isConnected();
-      if (conn.isConnected) {
-        const allowedInfo = await isAllowed();
-        if (allowedInfo.isAllowed) {
-          const { address, error } = await getAddress();
-          if (address && !error) {
-            setPublicKey(address);
-            fetchBalance(address);
-          }
-        }
-      }
-    } catch (e) {
-      console.error("Freighter error:", e);
+  // ── Polling for payment updates ───────────────────────────────────────────
+
+  useEffect(() => {
+    if (publicKey) {
+      refreshData();
+      pollRef.current = setInterval(refreshData, 15000);
     }
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publicKey]);
+
+  const refreshData = useCallback(async () => {
+    if (!publicKey) return;
+    try {
+      const [payments, history, bal] = await Promise.all([
+        getPayments(),
+        getTransactionHistory(publicKey),
+        fetchBalance(publicKey),
+      ]);
+      setContractPayments(payments);
+      setTxHistory(history);
+      setBalance(bal);
+    } catch (e) {
+      console.error("Data refresh error:", e);
+    }
+  }, [publicKey]);
+
+  // ── Wallet Actions ────────────────────────────────────────────────────────
+
+  const handleOpenWalletModal = async () => {
+    const wallets = await detectWallets();
+    setAvailableWallets(wallets);
+    setShowWalletModal(true);
   };
 
-  const handleConnect = async () => {
+  const handleConnectWallet = async (type) => {
     setLoading(true);
+    setTxError(null);
     try {
-      let conn = { isConnected: false };
-      try { conn = await isConnected(); } catch(e){}
-
-      if (conn.isConnected) {
-        const { address, error } = await requestAccess();
-        if (error) {
-          console.error("Wallet access rejected:", error);
-        } else if (address) {
-          setPublicKey(address);
-          await fetchBalance(address);
-        }
-      } else {
-        alert("Freighter is not installed or available.");
-      }
-    } catch (e) {
-      console.error("Connection error:", e);
+      const result = await connectWallet(type);
+      setPublicKey(result.address);
+      setWalletType(result.walletType);
+      const bal = await fetchBalance(result.address);
+      setBalance(bal);
+      setShowWalletModal(false);
+    } catch (error) {
+      setTxError({
+        type: error.type || ERROR_TYPES.WALLET_NOT_FOUND,
+        message: error.message || ERROR_MESSAGES[ERROR_TYPES.WALLET_NOT_FOUND],
+      });
     }
     setLoading(false);
   };
 
   const handleDisconnect = () => {
+    walletDisconnect();
     setPublicKey("");
+    setWalletType(null);
     setBalance(null);
-    setTxStatus({ status: "idle", hash: "", error: "" });
+    setTxStatus(TX_STATUS.IDLE);
+    setTxHash("");
+    setTxError(null);
+    setContractPayments([]);
+    setTxHistory([]);
   };
 
-  const fetchBalance = async (pubKey) => {
-    try {
-      const account = await SERVER.loadAccount(pubKey);
-      const nativeBalance = account.balances.find((b) => b.asset_type === "native");
-      if (nativeBalance) {
-        setBalance(nativeBalance.balance);
-      }
-    } catch (e) {
-      console.error("Error fetching balance. Account may be unfunded.", e);
-      setBalance("0.0000000 (Unfunded Account)");
+  // ── Recipients ────────────────────────────────────────────────────────────
+
+  const addRecipient = () => {
+    if (recipients.length < 5) {
+      setRecipients([...recipients, { address: "", amount: "1", memo: "" }]);
     }
   };
 
-  const handleSendTransaction = async (e) => {
+  const removeRecipient = (index) => {
+    if (recipients.length > 1) {
+      setRecipients(recipients.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateRecipient = (index, field, value) => {
+    const updated = [...recipients];
+    updated[index][field] = value;
+    setRecipients(updated);
+  };
+
+  // ── Submit Payments ───────────────────────────────────────────────────────
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setTxStatus({ status: "pending", hash: "", error: "" });
+    setTxError(null);
+    setTxHash("");
 
-    try {
-      // 1. Fetch Source Account
-      const sourceAccount = await SERVER.loadAccount(publicKey);
-      const fee = await SERVER.fetchBaseFee();
+    for (let i = 0; i < recipients.length; i++) {
+      const { address, amount, memo } = recipients[i];
 
-      // 2. Build testnet transaction
-      const tx = new TransactionBuilder(sourceAccount, {
-        fee,
-        networkPassphrase: Networks.TESTNET,
-      })
-        .addOperation(
-          Operation.payment({
-            destination: targetAddress,
-            asset: Asset.native(),
-            amount: amount,
-          })
-        )
-        .setTimeout(180)
-        .build();
-
-      // 3. Request Signature from Freighter
-      const { signedTxXdr, error: signError } = await signTransaction(tx.toXDR(), {
-        networkPassphrase: Networks.TESTNET,
-      });
-
-      if (signError) {
-        throw new Error(signError);
+      // Validate address
+      if (!isValidStellarAddress(address)) {
+        setTxError({
+          type: ERROR_TYPES.INVALID_ADDRESS,
+          message: `Recipient ${i + 1}: ${ERROR_MESSAGES[ERROR_TYPES.INVALID_ADDRESS]}`,
+        });
+        setTxStatus(TX_STATUS.FAILED);
+        setLoading(false);
+        return;
       }
 
-      // 4. Construct signed transaction & submit
-      const signedTx = TransactionBuilder.fromXDR(
-        signedTxXdr,
-        Networks.TESTNET
-      );
+      try {
+        // Send XLM payment
+        const result = await sendPayment(
+          publicKey,
+          address,
+          amount,
+          setTxStatus
+        );
+        setTxHash(result.hash);
 
-      const txResult = await SERVER.submitTransaction(signedTx);
-      
-      // Update UI & refresh balance
-      setTxStatus({ status: "success", hash: txResult.hash, error: "" });
-      fetchBalance(publicKey);
-
-    } catch (error) {
-      console.error("Transaction Error:", error);
-      let errorMsg = error?.message || "Transaction failed";
-      
-      // Attempt to extract Horizon error messages
-      if (error?.response?.data?.extras?.result_codes) {
-        const rc = error.response.data.extras.result_codes;
-        errorMsg = `Horizon Error: tx=${rc.transaction}, ops=${rc.operations?.join(",")}`;
+        // Optionally record on contract
+        if (recordOnContract) {
+          await recordPaymentOnContract(
+            publicKey,
+            address,
+            amount,
+            memo || `Payment #${i + 1}`,
+            (s) => { } // silent status for contract recording
+          );
+        }
+      } catch (error) {
+        setTxStatus(TX_STATUS.FAILED);
+        setTxError({
+          type: error.type || ERROR_TYPES.NETWORK_ERROR,
+          message:
+            error.message ||
+            ERROR_MESSAGES[error.type] ||
+            "Transaction failed",
+        });
+        setLoading(false);
+        return;
       }
-      
-      setTxStatus({ status: "error", hash: "", error: errorMsg });
     }
+
+    setTxStatus(TX_STATUS.SUCCESS);
     setLoading(false);
+
+    // Refresh data after successful payment
+    setTimeout(refreshData, 2000);
   };
 
-  return (
-    <div className="relative min-h-screen bg-[#050505] text-gray-100 flex items-center justify-center p-4 overflow-hidden font-sans">
-      {/* Background Animated Blobs for Glassmorphism */}
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-orange-600/20 rounded-full mix-blend-screen filter blur-[100px] animate-pulse"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-amber-600/10 rounded-full mix-blend-screen filter blur-[100px] animate-pulse" style={{ animationDelay: '2s' }}></div>
+  // ── Render ────────────────────────────────────────────────────────────────
 
-      <div className="relative z-10 w-full max-w-lg bg-white/[0.02] backdrop-blur-2xl rounded-3xl shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] overflow-hidden border border-white/[0.05]">
-        {/* Header */}
-        <div className="p-8 border-b border-white/[0.05] bg-black/20">
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-orange-400 to-amber-200">
-              Stellar dApp
-            </h1>
-            {!publicKey ? (
-              <button
-                onClick={handleConnect}
-                disabled={loading}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-tr from-orange-600 to-orange-500 hover:from-orange-500 hover:to-orange-400 shadow-lg shadow-orange-500/20 transition-all rounded-xl font-medium text-sm text-white border border-orange-400/20"
-              >
-                <Wallet size={16} />
-                {loading ? "Connecting..." : "Connect"}
-              </button>
-            ) : (
-              <button
-                onClick={handleDisconnect}
-                className="flex items-center gap-2 px-4 py-2 border border-white/10 hover:bg-white/5 transition-all rounded-xl font-medium text-sm text-gray-300 hover:text-white backdrop-blur-md"
-              >
-                <LogOut size={16} />
-                Disconnect
-              </button>
-            )}
+  return (
+    <div className="app-root" data-theme={theme}>
+      {/* Animated Background */}
+      <div className="bg-blob blob-1" />
+      <div className="bg-blob blob-2" />
+      <div className="bg-blob blob-3" />
+
+      <div className="app-container">
+        {/* ── Header ──────────────────────────────────────────────────── */}
+        <header className="app-header fadeIn-delayed">
+          <div className="header-left">
+            <div className="logo-group scale-in">
+              <div className="logo-circle">
+                <Activity size={24} strokeWidth={2.5} />
+              </div>
+              <div className="logo-text">
+                <h1 className="app-title">STELLARPAY</h1>
+                <span className="app-subtitle">PAYMENT TRACKER</span>
+              </div>
+            </div>
+            <nav className="header-nav">
+              <a href="https://laboratory.stellar.org/#account-creator?network=test" target="_blank" rel="noreferrer" className="nav-link">
+                Faucet <ExternalLink size={12} />
+              </a>
+              <a href="https://stellar.expert/explorer/testnet" target="_blank" rel="noreferrer" className="nav-link">
+                Explorer <ExternalLink size={12} />
+              </a>
+            </nav>
           </div>
 
-          {/* Balance Area */}
-          {publicKey ? (
-            <div className="bg-black/30 p-6 rounded-2xl border border-white/10 backdrop-blur-md relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full blur-3xl -mr-10 -mt-10 transition-transform group-hover:scale-150 duration-700"></div>
-              
-              <div className="relative z-10">
-                <p className="text-xs text-orange-200/50 font-medium tracking-widest uppercase mb-1">
-                  Connected Wallet
-                </p>
-                <p className="text-sm text-gray-300 font-mono mb-4 break-all opacity-90">
-                  {publicKey}
-                </p>
-                <div className="flex items-end gap-2 text-orange-400 mb-4 drop-shadow-md">
-                  <span className="text-4xl font-bold tracking-tight">
+          <div className="header-right">
+            <div className="header-actions">
+              <button
+                className="theme-toggle"
+                onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+                title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+              >
+                {theme === "light" ? <Moon size={20} /> : <Sun size={20} />}
+              </button>
+
+              {!publicKey ? (
+                <button
+                  className="btn btn-primary btn-elevated"
+                  onClick={handleOpenWalletModal}
+                  disabled={loading}
+                >
+                  <Wallet size={16} />
+                  {loading ? "CONNECTING..." : "CONNECT WALLET"}
+                </button>
+              ) : (
+                <div className="wallet-info slideIn-right">
+                  <div className="wallet-badge">
+                    <div className="status-dot pulse-indigo" />
+                    <span>
+                      {walletType === WALLET_TYPES.FREIGHTER
+                        ? "FREIGHTER"
+                        : "XBULL"}
+                    </span>
+                  </div>
+                  <span className="wallet-address">
+                    {publicKey.slice(0, 4)}...{publicKey.slice(-4)}
+                  </span>
+                  <button
+                    className="btn-ghost-circle disconnect-btn"
+                    onClick={handleDisconnect}
+                    title="Disconnect Wallet"
+                  >
+                    <LogOut size={18} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* ── Wallet Selection Modal ─────────────────────────────────── */}
+        {showWalletModal && (
+          <div
+            className="modal-overlay"
+            onClick={() => setShowWalletModal(false)}
+          >
+            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              <h2 className="modal-title">CONNECT WALLET</h2>
+              <p className="modal-subtitle">CHOOSE YOUR STELLAR PROVIDER</p>
+              <div className="wallet-list">
+                {availableWallets.map((w) => (
+                  <button
+                    key={w.id}
+                    className={`wallet-option ${!w.available ? "disabled" : ""}`}
+                    onClick={() =>
+                      w.available && handleConnectWallet(w.id)
+                    }
+                    disabled={!w.available || loading}
+                  >
+                    <span className="wallet-option-icon">{w.icon}</span>
+                    <span className="wallet-option-name">{w.name.toUpperCase()}</span>
+                    {w.available ? (
+                      <span className="wallet-option-status available">
+                        READY
+                      </span>
+                    ) : (
+                      <span className="wallet-option-status unavailable">
+                        MISSING
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <button
+                className="btn btn-ghost modal-close"
+                onClick={() => setShowWalletModal(false)}
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Error Toast ────────────────────────────────────────────── */}
+        {txError && (
+          <div className={`error-toast error-${txError.type} slideIn-right`}>
+            <div className="error-toast-icon">
+              {txError.type === ERROR_TYPES.WALLET_NOT_FOUND && (
+                <XCircle size={20} />
+              )}
+              {txError.type === ERROR_TYPES.TX_REJECTED && (
+                <XCircle size={20} />
+              )}
+              {txError.type === ERROR_TYPES.INSUFFICIENT_BALANCE && (
+                <AlertCircle size={20} />
+              )}
+              {txError.type === ERROR_TYPES.INVALID_ADDRESS && (
+                <AlertCircle size={20} />
+              )}
+              {txError.type === ERROR_TYPES.CONTRACT_ERROR && (
+                <AlertCircle size={20} />
+              )}
+              {txError.type === ERROR_TYPES.NETWORK_ERROR && (
+                <AlertCircle size={20} />
+              )}
+            </div>
+            <div className="error-toast-content">
+              <span className="error-toast-type">
+                {txError.type.replace(/_/g, " ")}
+              </span>
+              <p className="error-toast-message">{txError.message}</p>
+            </div>
+            <button
+              className="error-toast-close"
+              onClick={() => setTxError(null)}
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        {/* ── Not Connected State ────────────────────────────────────── */}
+        {!publicKey && (
+          <div className="welcome-panel slideUp-heavy">
+            <div className="welcome-icon-wrap">
+              <Zap size={40} strokeWidth={2.5} />
+            </div>
+            <h2 className="welcome-title text-focus-in">Clean. Professional. Fast.</h2>
+            <p className="welcome-desc">
+              Experience the next generation of Stellar payments. Multi-address tracking across wallets with professional-grade smart contract logging.
+            </p>
+            <div className="welcome-features">
+              <div className="feature-chip">
+                MULTI-WALLET
+              </div>
+              <div className="feature-chip">
+                SMART LOGS
+              </div>
+              <div className="feature-chip">
+                TESTNET READY
+              </div>
+            </div>
+            <button
+              className="btn btn-primary btn-lg mt-8"
+              onClick={handleOpenWalletModal}
+              disabled={loading}
+            >
+              GET STARTED <Send size={16} />
+            </button>
+          </div>
+        )}
+
+        {/* ── Connected Dashboard ────────────────────────────────────── */}
+        {publicKey && (
+          <div className="dashboard">
+            {/* Balance Card */}
+            <div className="balance-card glass-card">
+              <div className="balance-card-glow" />
+              <div className="balance-card-content">
+                <p className="balance-label">Testnet Balance</p>
+                <div className="balance-value">
+                  <span className="balance-amount">
                     {balance !== null ? balance : "..."}
                   </span>
-                  <span className="text-lg font-medium mb-1 text-orange-300">XLM</span>
+                  <span className="balance-unit">XLM</span>
                 </div>
-                <p className="text-xs text-gray-500 italic">
-                  Switch your active wallet in the Freighter extension to automatically update.
-                </p>
+                <p className="balance-address">{publicKey}</p>
               </div>
             </div>
-          ) : (
-            <div className="text-center py-8 opacity-70">
-              <p className="text-gray-400 mb-2 font-medium">Welcome to Level 1 - White Belt</p>
-              <p className="text-sm text-gray-500">Connect your Freighter testnet wallet to begin.</p>
-            </div>
-          )}
-        </div>
 
-        {/* Transaction Form */}
-        {publicKey && (
-          <div className="p-8">
-            <h2 className="text-lg font-semibold mb-6 flex items-center gap-2 text-gray-100">
-              <Send size={18} className="text-orange-400" />
-              Send XLM
-            </h2>
-            <form onSubmit={handleSendTransaction} className="space-y-5">
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">
-                  Destination Address
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={targetAddress}
-                  onChange={(e) => setTargetAddress(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-gray-200 font-mono text-sm placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 backdrop-blur-md transition-all shadow-inner"
-                  placeholder="G..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">
-                  Amount (XLM)
-                </label>
-                <input
-                  type="number"
-                  step="0.0000001"
-                  required
-                  min="0.0000001"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-gray-200 font-medium placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 backdrop-blur-md transition-all shadow-inner"
-                  placeholder="0.0"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-4 px-4 bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500 hover:from-orange-500 hover:via-amber-500 hover:to-orange-400 text-white rounded-xl font-medium transition-all duration-300 shadow-[0_0_20px_rgba(249,115,22,0.3)] hover:shadow-[0_0_25px_rgba(249,115,22,0.5)] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed border border-orange-400/30"
-              >
-                {loading ? <Clock size={20} className="animate-spin" /> : <Send size={20} />}
-                {loading ? "Processing..." : "Submit Transaction"}
-              </button>
-            </form>
-
-            {/* Status Messages */}
-            {txStatus.status === "error" && (
-              <div className="mt-6 p-4 bg-red-950/40 border border-red-500/30 rounded-xl flex items-start gap-3 text-red-400 backdrop-blur-md shadow-[0_0_15px_rgba(239,68,68,0.1)]">
-                <AlertCircle size={20} className="shrink-0 mt-0.5" />
-                <p className="text-sm font-medium break-words leading-relaxed text-red-300">
-                  {txStatus.error}
-                </p>
-              </div>
-            )}
-
-            {txStatus.status === "success" && (
-              <div className="mt-6 p-4 bg-emerald-950/40 border border-emerald-500/30 rounded-xl flex items-start gap-3 text-emerald-400 backdrop-blur-md shadow-[0_0_15px_rgba(16,185,129,0.1)]">
-                <CheckCircle2 size={20} className="shrink-0 mt-0.5" />
-                <div className="text-sm font-medium overflow-hidden">
-                  <p className="mb-1 text-emerald-300 font-semibold tracking-wide">Transaction Successful!</p>
-                  <a
-                    href={`https://stellar.expert/explorer/testnet/tx/${txStatus.hash}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="truncate block hover:underline text-emerald-500/90 hover:text-emerald-400 transition-colors"
-                    title="View on Stellar Expert"
+            {/* Main Grid */}
+            <div className="dashboard-grid">
+              {/* Left Column - Payment Form */}
+              <div className="payment-form-card glass-card">
+                <div className="card-header">
+                  <h2>
+                    <Send size={18} /> Send Payments
+                  </h2>
+                  <button
+                    className="btn btn-sm btn-outline"
+                    onClick={addRecipient}
+                    disabled={recipients.length >= 5}
+                    title="Add another recipient"
                   >
-                    Hash: <span className="font-mono text-xs opacity-80">{txStatus.hash}</span>
-                  </a>
+                    <Plus size={14} /> Add
+                  </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="payment-form">
+                  {recipients.map((r, i) => (
+                    <div key={i} className="recipient-row">
+                      <div className="recipient-header">
+                        <span className="recipient-number">#{i + 1}</span>
+                        {recipients.length > 1 && (
+                          <button
+                            type="button"
+                            className="btn-icon-danger"
+                            onClick={() => removeRecipient(i)}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Destination address (G...)"
+                        value={r.address}
+                        onChange={(e) =>
+                          updateRecipient(i, "address", e.target.value)
+                        }
+                        className="input-field input-mono"
+                        required
+                      />
+                      <div className="recipient-row-inline">
+                        <input
+                          type="number"
+                          step="0.0000001"
+                          min="0.0000001"
+                          placeholder="Amount (XLM)"
+                          value={r.amount}
+                          onChange={(e) =>
+                            updateRecipient(i, "amount", e.target.value)
+                          }
+                          className="input-field"
+                          required
+                        />
+                        <input
+                          type="text"
+                          placeholder="Memo (optional)"
+                          value={r.memo}
+                          onChange={(e) =>
+                            updateRecipient(i, "memo", e.target.value)
+                          }
+                          className="input-field"
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Contract Toggle */}
+                  <div className="contract-toggle">
+                    <label className="toggle-label">
+                      <input
+                        type="checkbox"
+                        checked={recordOnContract}
+                        onChange={(e) =>
+                          setRecordOnContract(e.target.checked)
+                        }
+                        className="toggle-checkbox"
+                      />
+                      <span className="toggle-slider" />
+                      <span className="toggle-text">
+                        <FileText size={14} />
+                        Record on Smart Contract
+                      </span>
+                    </label>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="btn btn-primary btn-submit"
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 size={18} className="spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <Send size={18} />
+                        Submit{" "}
+                        {recipients.length > 1
+                          ? `${recipients.length} Payments`
+                          : "Payment"}
+                      </>
+                    )}
+                  </button>
+                </form>
+
+                {/* Transaction Status Timeline */}
+                {txStatus !== TX_STATUS.IDLE && (
+                  <div className="tx-timeline">
+                    <h3 className="tx-timeline-title">Transaction Status</h3>
+                    <div className="timeline-steps">
+                      <TimelineStep
+                        label="Building"
+                        status={getStepStatus("building", txStatus)}
+                        icon={<FileText size={14} />}
+                      />
+                      <TimelineStep
+                        label="Signing"
+                        status={getStepStatus("signing", txStatus)}
+                        icon={<ShieldCheck size={14} />}
+                      />
+                      <TimelineStep
+                        label="Submitting"
+                        status={getStepStatus("submitting", txStatus)}
+                        icon={<Send size={14} />}
+                      />
+                      <TimelineStep
+                        label="Confirming"
+                        status={getStepStatus("confirming", txStatus)}
+                        icon={<Clock size={14} />}
+                      />
+                      <TimelineStep
+                        label={
+                          txStatus === TX_STATUS.FAILED ? "Failed" : "Done"
+                        }
+                        status={getStepStatus("result", txStatus)}
+                        icon={
+                          txStatus === TX_STATUS.FAILED ? (
+                            <XCircle size={14} />
+                          ) : (
+                            <CheckCircle2 size={14} />
+                          )
+                        }
+                      />
+                    </div>
+                    {txHash && (
+                      <a
+                        href={`https://stellar.expert/explorer/testnet/tx/${txHash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="tx-hash-link"
+                      >
+                        <ExternalLink size={12} />
+                        {txHash.slice(0, 8)}...{txHash.slice(-8)}
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column - Payment History / Tx History */}
+              <div className="history-card glass-card">
+                <div className="card-header">
+                  <div className="tab-group">
+                    <button
+                      className={`tab-btn ${activeTab === "payments" ? "active" : ""}`}
+                      onClick={() => setActiveTab("payments")}
+                    >
+                      <FileText size={14} /> Contract Log
+                    </button>
+                    <button
+                      className={`tab-btn ${activeTab === "history" ? "active" : ""}`}
+                      onClick={() => setActiveTab("history")}
+                    >
+                      <Activity size={14} /> Tx History
+                    </button>
+                  </div>
+                  <button
+                    className="btn btn-sm btn-ghost"
+                    onClick={refreshData}
+                    title="Refresh"
+                  >
+                    <RefreshCw size={14} />
+                  </button>
+                </div>
+
+                <div className="history-list">
+                  {activeTab === "payments" && (
+                    <>
+                      {contractPayments.length === 0 ? (
+                        <div className="empty-state">
+                          <FileText size={32} />
+                          <p>No payments recorded yet</p>
+                          <span>
+                            Send a payment with "Record on Smart Contract"
+                            enabled
+                          </span>
+                        </div>
+                      ) : (
+                        contractPayments.map((p, i) => (
+                          <div key={i} className="payment-item">
+                            <div className="payment-item-header">
+                              <span className="payment-id">#{p.id}</span>
+                              <span className="payment-status completed">
+                                <CheckCircle2 size={12} /> Completed
+                              </span>
+                            </div>
+                            <div className="payment-detail">
+                              <span className="label">To:</span>
+                              <span className="value mono">
+                                {typeof p.recipient === "string"
+                                  ? `${p.recipient.slice(0, 8)}...${p.recipient.slice(-4)}`
+                                  : "—"}
+                              </span>
+                            </div>
+                            <div className="payment-detail">
+                              <span className="label">Amount:</span>
+                              <span className="value highlight">
+                                {typeof p.amount === "number"
+                                  ? p.amount.toFixed(2)
+                                  : p.amount}{" "}
+                                XLM
+                              </span>
+                            </div>
+                            {p.memo && (
+                              <div className="payment-detail">
+                                <span className="label">Memo:</span>
+                                <span className="value">{p.memo}</span>
+                              </div>
+                            )}
+                            <div className="payment-detail">
+                              <span className="label">Time:</span>
+                              <span className="value">
+                                {new Date(
+                                  p.timestamp * 1000
+                                ).toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </>
+                  )}
+
+                  {activeTab === "history" && (
+                    <>
+                      {txHistory.length === 0 ? (
+                        <div className="empty-state">
+                          <Activity size={32} />
+                          <p>No transactions yet</p>
+                          <span>Send a payment to see transactions here</span>
+                        </div>
+                      ) : (
+                        txHistory.map((tx, i) => (
+                          <div key={i} className="payment-item">
+                            <div className="payment-item-header">
+                              <a
+                                href={`https://stellar.expert/explorer/testnet/tx/${tx.hash}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="tx-link"
+                              >
+                                {tx.hash.slice(0, 10)}...
+                                <ExternalLink size={10} />
+                              </a>
+                              <span
+                                className={`payment-status ${tx.successful ? "completed" : "failed"}`}
+                              >
+                                {tx.successful ? (
+                                  <>
+                                    <CheckCircle2 size={12} /> Success
+                                  </>
+                                ) : (
+                                  <>
+                                    <XCircle size={12} /> Failed
+                                  </>
+                                )}
+                              </span>
+                            </div>
+                            <div className="payment-detail">
+                              <span className="label">Date:</span>
+                              <span className="value">
+                                {new Date(tx.createdAt).toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="payment-detail">
+                              <span className="label">Ops:</span>
+                              <span className="value">
+                                {tx.operationCount}
+                              </span>
+                            </div>
+                            <div className="payment-detail">
+                              <span className="label">Fee:</span>
+                              <span className="value">
+                                {(tx.feeCharged / 10000000).toFixed(7)} XLM
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Real-time sync indicator */}
+                <div className="sync-indicator">
+                  <div className="sync-dot" />
+                  <span>Auto-syncing every 15s</span>
                 </div>
               </div>
-            )}
+            </div>
+
+            {/* Contract Info Footer */}
+            <div className="contract-info glass-card">
+              <FileText size={14} />
+              <span>Contract ID: </span>
+              <code>{CONTRACT_ID.slice(0, 12)}...{CONTRACT_ID.slice(-6)}</code>
+              <span className="contract-network">
+                <div className="status-dot pulse-purple" />
+                Testnet
+              </span>
+            </div>
           </div>
         )}
       </div>
     </div>
   );
+}
+
+// ─── Timeline Step Component ────────────────────────────────────────────────
+
+function TimelineStep({ label, status, icon }) {
+  return (
+    <div className={`timeline-step ${status}`}>
+      <div className="timeline-dot">
+        {status === "active" ? <Loader2 size={12} className="spin" /> : icon}
+      </div>
+      <span className="timeline-label">{label}</span>
+    </div>
+  );
+}
+
+// ─── Status Helper ──────────────────────────────────────────────────────────
+
+function getStepStatus(step, currentStatus) {
+  const order = ["building", "signing", "submitting", "confirming", "result"];
+  const statusMap = {
+    [TX_STATUS.BUILDING]: 0,
+    [TX_STATUS.SIGNING]: 1,
+    [TX_STATUS.SUBMITTING]: 2,
+    [TX_STATUS.CONFIRMING]: 3,
+    [TX_STATUS.SUCCESS]: 4,
+    [TX_STATUS.FAILED]: 4,
+  };
+  const stepIndex = order.indexOf(step);
+  const currentIndex = statusMap[currentStatus] ?? -1;
+
+  if (stepIndex < currentIndex) return "completed";
+  if (stepIndex === currentIndex) {
+    if (step === "result") {
+      if (currentStatus === TX_STATUS.SUCCESS) return "completed";
+      if (currentStatus === TX_STATUS.FAILED) return "failed";
+    }
+    return "active";
+  }
+  return "pending";
 }
 
 export default App;
