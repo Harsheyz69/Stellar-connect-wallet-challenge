@@ -47,19 +47,19 @@ The application will be accessible at `http://localhost:3000` or `http://localho
 
 ### 1. Wallet Connection State
 Displays the interface after a successful connection, showing the masked public address to the user.
-![Wallet Connected](./screenshots/wallet-connected.png)
+![Wallet Connected](./screenshots/wallet-connected-and-balance-displayed.png)
 
 ### 2. Balance Display
 Illustrates the dynamically fetched XLM balance from the Stellar Testnet Horizon server.
-![Balance Displayed](./screenshots/balance-displayed.png)
+![Balance Displayed](./screenshots/wallet-connected-and-balance-displayed.png)
 
 ### 3. Successful Testnet Transaction
 Visual confirmation of a transaction being processed and signed through the Freighter wallet.
-![Successful Transaction](./screenshots/transaction-success.png)
+![Successful Transaction](./screenshots/test-net-transaction-display.png)
 
 ### 4. Transaction Result
 The final state showing the unique transaction hash and confirmation of successful ledger inclusion.
-![Transaction Result](./screenshots/transaction-result.png)
+![Transaction Result](./screenshots/testnet-transaction-result-display.png)
 
 ## Technical Stack
 - **Framework**: React 19
