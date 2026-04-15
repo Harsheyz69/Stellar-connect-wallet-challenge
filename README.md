@@ -1,61 +1,71 @@
-# Stellar Connect Wallet Testnet DApp
+# Stellar Connect Wallet Challenge
 
-A modern, responsive decentralized application (dApp) built on the Stellar Testnet. This application allows users to securely connect their Freighter wallet, check their XLM balance, and execute testnet transactions with real-time interface feedback. Built with React and styled using Tailwind CSS.
+A professional-grade decentralized application (dApp) developed on the Stellar Testnet. This platform enables users to securely integrate their Freighter wallet, monitor real-time XLM balances, and execute native transactions with comprehensive status tracking and feedback.
 
-## Features
+## Project Overview
 
-- **Freighter Wallet Integration**: Secure connection supporting dynamic account switching (`WatchWalletChanges`).
-- **Real-Time Balance Check**: Interfaces directly with the `@stellar/stellar-sdk` and `@stellar/freighter-api` to read XLM balances.
-- **Testnet Transactions**: Users can effortlessly perform native XLM transactions targeting predefined robust Testnet addresses.
-- **Rich Status Feedback**: Intuitive loading states, transaction processing loaders, and success/error status messages inline.
+The Stellar Connect Wallet is designed to provide a seamless interface for interacting with the Stellar blockchain. By leveraging the Freighter wallet extension and the Stellar SDK, the application ensures secure transaction signing without local private key storage.
+
+### Key Features
+- **Wallet Integration**: Secure handshaking with the Freighter browser extension, supporting dynamic account detection.
+- **Real-Time Data**: Live balance fetching directly from the Stellar Testnet Horizon API.
+- **Transaction Lifecycle**: End-to-end handling of native payments, including building, signing, and submission confirmation.
+- **Robust Feedback**: A sophisticated UI state system providing clear updates during each stage of interaction.
 
 ## Setup Instructions
 
 ### Prerequisites
-1. [Node.js](https://nodejs.org/) (v16.x or newer recommended)
-2. [Freighter Wallet Browser Extension](https://www.freighter.app/)
-3. Ensure your Freighter wallet is switched to the **Testnet** network. You can fund your address with free testnet tokens using the [Stellar Laboratory Friendbot](https://laboratory.stellar.org/#account-creator?network=test).
+- Node.js (version 16.x or higher)
+- [Freighter Wallet](https://www.freighter.app/) extension installed and configured for Testnet
+- Testnet XLM (available via [Stellar Friendbot](https://laboratory.stellar.org/#account-creator?network=test))
 
-### Running Locally
+### Local Installation
 
-1. Clone or download this repository:
+1. Clone the repository:
    ```bash
    git clone https://github.com/Harsheyz/Stellar-connect-wallet-challenge.git
    ```
 
-2. Navigate into the specific frontend application directory:
+2. Navigate to the project directory:
    ```bash
    cd Stellar-connect-wallet-challenge/stellar-connect-wallet
    ```
 
-3. Install all the necessary dependencies:
+3. Install dependencies:
    ```bash
    npm install
    ```
 
-4. Launch the local development server:
+4. Launch the development server:
    ```bash
    npm start
    ```
 
-5. The application should automatically launch in your default browser at `http://localhost:3000`.
+The application will be accessible at `http://localhost:3000` or `http://localhost:3001` depending on port availability.
 
 ## Screenshots
 
-*(Please replace the placeholders in this section with actual screenshots from your tests)*
+### 1. Wallet Connection State
+Displays the interface after a successful connection, showing the masked public address to the user.
+![Wallet Connected](./screenshots/wallet-connected.png)
 
-### 1. Wallet Connected State
-> *Shows the user's Freighter address masked on the dashboard*
-![Wallet Connected](screenshots/wallet-connected.png)
-
-### 2. Balance Displayed
-> *Displays the dynamically fetched testnet XLM balance*
-![Balance Displayed](screenshots/balance-displayed.png)
+### 2. Balance Display
+Illustrates the dynamically fetched XLM balance from the Stellar Testnet Horizon server.
+![Balance Displayed](./screenshots/balance-displayed.png)
 
 ### 3. Successful Testnet Transaction
-> *Shows the transaction processing loader and the success state overlay*
-![Successful Transaction](screenshots/transaction-success.png)
+Visual confirmation of a transaction being processed and signed through the Freighter wallet.
+![Successful Transaction](./screenshots/transaction-success.png)
 
-### 4. Transaction Result is Shown
-> *The resulting UI message rendering the submitted transaction confirmation*
-![Transaction Result](screenshots/transaction-result.png)
+### 4. Transaction Result
+The final state showing the unique transaction hash and confirmation of successful ledger inclusion.
+![Transaction Result](./screenshots/transaction-result.png)
+
+## Technical Stack
+- **Framework**: React 19
+- **Styling**: Tailwind CSS / Vanilla CSS
+- **Network Interface**: @stellar/stellar-sdk
+- **Wallet Protocol**: @stellar/freighter-api
+
+## License
+This project is licensed under the MIT License.
